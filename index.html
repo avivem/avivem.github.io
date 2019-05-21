@@ -201,9 +201,11 @@ $(document).ready(function () {
 <h4>Packages</h4>
 <p>We will begin by loading up the neccesary libraries for this project.</p>
 <ul>
-<li><a href="https://www.tidyverse.org/" title="Tidyverse">Tidyverse</a>: A collection of great R packages which provides tools to mke graphs, use pipelines, tidy our data, and more.</li>
+<li><a href="https://www.tidyverse.org/" title="Tidyverse">Tidyverse</a>: A collection of great R packages which provides tools to make graphs, use pipelines, tidy our data, and more.</li>
+<li><a href="https://rvest.tidyverse.org/">rvest</a>: A collection of functions for scraping web pages</li>
 </ul>
 <pre class="r"><code>library(tidyverse)
+library(rvest)
 tidyverse::tidyverse_packages() # List all packages included in tidyverse</code></pre>
 <pre><code>##  [1] &quot;broom&quot;       &quot;cli&quot;         &quot;crayon&quot;      &quot;dplyr&quot;       &quot;dbplyr&quot;     
 ##  [6] &quot;forcats&quot;     &quot;ggplot2&quot;     &quot;haven&quot;       &quot;hms&quot;         &quot;httr&quot;       
@@ -254,7 +256,40 @@ head(snp, 10) # Load first 10 rows of snp.</code></pre>
 </div>
 <div id="loading-crude-oil-data" class="section level4">
 <h4>Loading Crude Oil Data</h4>
-<p><a href="https://www.investopedia.com/terms/c/crude-oil.asp">Crude Oil</a> is “a naturally occurring, unrefined petroleum product composed of hydrocarbon deposits and other organic materials. A type of fossil fuel, crude oil can be refined to produce usable products such as gasoline, diesel and various forms of petrochemicals.” Crude Oil is nonrenewable, and society’s dependence on the fuel source is slowly diminishing the world’s supply, and slowly raising the price each year.</p>
+<p><a href="https://www.investopedia.com/terms/c/crude-oil.asp">Crude Oil</a> is “a naturally occurring, unrefined petroleum product composed of hydrocarbon deposits and other organic materials. A type of fossil fuel, crude oil can be refined to produce usable products such as gasoline, diesel and various forms of petrochemicals.” Crude Oil is nonrenewable, and society’s dependence on the fuel source is slowly diminishing the world’s supply, and slowly raising the price each year. We are interested in looking at historical prices of crude oil.</p>
+<p>We will be using methods from the <a href="https://rvest.tidyverse.org/">rvest</a> package, another component of the tidyverse, to scrape a table with historical crude oil prices provided by (Investing.com)[<a href="https://www.investing.com/commodities/crude-oil-historical-data" class="uri">https://www.investing.com/commodities/crude-oil-historical-data</a>]. (Note: The site lets you download a csv, but we would like to practice scraping. Additionally, we are going to scrape the html file I downloaded, rather than directly from the website, but the process is exactly the same.)</p>
+<pre class="r"><code>oil &lt;- read_html(&quot;Crude Oil WTI Futures Historical Prices - Investing.com.html&quot;) %&gt;%
+  html_node(&quot;#curr_table&quot;) %&gt;% # Find HTML node that contains the table
+  html_table %&gt;% # Convert HTML table to R dataframe
+  magrittr::set_colnames(c(&quot;Date&quot;, &quot;Price&quot;, &quot;Open&quot;, &quot;High&quot;, &quot;Low&quot;, &quot;Volume&quot;, &quot;Change&quot;)) # Rename cols to better names</code></pre>
+<p>We have succesfully scraped the website, however the types of the attributes may not be correct. Lets see what types we have.</p>
+<pre class="r"><code>str(oil) # Shows a &quot;compact&quot; summary of an R object.</code></pre>
+<pre><code>## 'data.frame':    4838 obs. of  7 variables:
+##  $ Date  : chr  &quot;May 20, 2019&quot; &quot;May 19, 2019&quot; &quot;May 17, 2019&quot; &quot;May 16, 2019&quot; ...
+##  $ Price : num  63.4 63.6 62.8 62.9 62 ...
+##  $ Open  : num  63.6 63.2 63.1 62.1 61.4 ...
+##  $ High  : num  64 63.7 63.6 63.5 62.3 ...
+##  $ Low   : num  62.6 63.2 62.5 62.1 60.9 ...
+##  $ Volume: chr  &quot;-&quot; &quot;-&quot; &quot;215.80K&quot; &quot;545.68K&quot; ...
+##  $ Change: chr  &quot;-0.24%&quot; &quot;1.27%&quot; &quot;-0.17%&quot; &quot;1.37%&quot; ...</code></pre>
+<p>Based on the results of calling str on our oil dataframe, we see that Date, Volume, and Change % are stored as characters. We need to fix the types of those attributes, and we can do so using <a href="https://www.rdocumentation.org/packages/readr/versions/1.3.1/topics/type_convert">type_convert</a> from the readr package.</p>
+<pre class="r"><code>oil$Volume &lt;- gsub('K', 'e3', oil$Volume) # replace all numbers ending in K with e3
+oil$Volume &lt;- gsub('M', 'e6', oil$Volume) # replace all numbers ending in M with e6
+oil[oil == &quot;-&quot;] &lt;- NA
+oil$Change &lt;- as.numeric(sub(&quot;%&quot;, &quot;&quot;,oil$Change,fixed=TRUE))/100 # Convert percentages to decimal
+
+oil &lt;- oil %&gt;%
+  type_convert(col_types = cols(Date = col_datetime(format = &quot;%b %d, %Y&quot;))) # Convert to correct types.
+
+str(oil)</code></pre>
+<pre><code>## 'data.frame':    4838 obs. of  7 variables:
+##  $ Date  : POSIXct, format: &quot;2019-05-20&quot; &quot;2019-05-19&quot; ...
+##  $ Price : num  63.4 63.6 62.8 62.9 62 ...
+##  $ Open  : num  63.6 63.2 63.1 62.1 61.4 ...
+##  $ High  : num  64 63.7 63.6 63.5 62.3 ...
+##  $ Low   : num  62.6 63.2 62.5 62.1 60.9 ...
+##  $ Volume: num  NA NA 215800 545680 723000 ...
+##  $ Change: num  -0.0024 0.0127 -0.0017 0.0137 0.0039 0.0121 -0.0101 -0.0006 -0.0068 0.0117 ...</code></pre>
 </div>
 </div>
 </div>
