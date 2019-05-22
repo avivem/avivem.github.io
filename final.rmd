@@ -1,0 +1,295 @@
+---
+title: "Predicting the S&P 500"
+author: "Aviv Elazar-Mittelman"
+date: "May 20, 2019"
+output: html_document
+---
+
+# Introduction
+
+The S&P 500 Index is an American stock market index which is an indicator of the health of the United States economy based on 500 of the largest United States stocks. Some of the largest publicy traded companies are included in the S&P 500, such as Microsoft, Apple, Amazon, Facebook, and more. In this project, we are going to do some exploratory data analysis on S&P 500 historical data obtained from Yahoo.com, and use historical pricing of crude oil, gold, and silver to predict the S&P 500.
+
+## Data
+
+#### Packages
+
+We will begin by loading up the neccesary libraries for this project.
+
+* [Tidyverse](https://www.tidyverse.org/ "Tidyverse"): A collection of great R packages which provides tools to make graphs, use pipelines, tidy our data, and more.
+* [rvest](https://rvest.tidyverse.org/): A collection of functions for scraping web pages
+
+```{r message=FALSE}
+library(tidyverse)
+library(rvest)
+tidyverse::tidyverse_packages() # List all packages included in tidyverse
+```
+
+#### Loading S&P 500 Data
+
+Now that all libraries have been loaded, we can load the dataset acquired from Yahoo Finance into a dataframe. The dataset is stored in a csv file (Which can be found [here](https://query1.finance.yahoo.com/v7/finance/download/%5EGSPC?period1=-630961200&period2=1558324800&interval=1d&events=history&crumb=h6MKD9iV9L4)), so we will use the [read_csv](https://readr.tidyverse.org/reference/read_delim.html "read_csv") function from the readr package (part of the tidyverse), to do so.
+
+```{r message=FALSE}
+snp <- read_csv("snp500.csv") %>%
+  as.tibble() # Load data into dataframe called snp
+head(snp, 10) # Load first 10 rows of snp.
+```
+
+The dataset has seven attributes:
+
+* Date - Date
+* Open      - The value of the S&P at market opening
+* High      - Highest value of the S&P on that date
+* Low       - Lowest value of the S&P on that date
+* Close     - The value of the S&P at market closing
+* Adj Close - The value of the S&P at market closing adjusted for dividends
+* Volume - Number of shares traded on that date
+
+We can check the number of observations by using the function [nrow](https://www.rdocumentation.org/packages/base/versions/3.6.0/topics/nrow). Lets find out how many years of data is in this dataset.
+```{r}
+nrow(snp)/365
+```
+So we have about 48 years worth of S&P 500 data.
+
+Lets try plotting The closing value of the S&P 500 by Year. To do so, we will use the [ggplot](https://ggplot2.tidyverse.org/reference/ggplot.html) function of the ggplot2 package.
+```{r}
+snp %>%
+  ggplot(aes(x=Date, y=Close)) +
+  geom_line() + #Create a line plot
+  labs(x="Year", y="Closing Value", title = "S&P 500 Closing Value by Year")
+```
+
+Looking at this plot, the S&P 500 seems to have grown exponentially over time.
+
+#### Loading Crude Oil Data
+
+[Crude Oil](https://www.investopedia.com/terms/c/crude-oil.asp) is "a naturally occurring, unrefined petroleum product composed of hydrocarbon deposits and other organic materials. A type of fossil fuel, crude oil can be refined to produce usable products such as gasoline, diesel and various forms of petrochemicals." Crude Oil is nonrenewable, and society's dependence on the fuel source is slowly diminishing the world's supply, and slowly raising the price each year. We are interested in looking at historical prices of crude oil.
+
+We will be using methods from the [rvest](https://rvest.tidyverse.org/) package, another component of the tidyverse, to scrape a table with historical crude oil prices provided by (Investing.com)[https://www.investing.com/commodities/crude-oil-historical-data]. (Note: The site lets you download a csv, but we would like to practice scraping. Additionally, we are going to scrape the html file I downloaded, rather than directly from the website, but the process is exactly the same.)
+
+```{r}
+oil <- read_html("Crude Oil WTI Futures Historical Prices - Investing.com.html") %>%
+  html_node("#curr_table") %>% # Find HTML node that contains the table
+  html_table %>% # Convert HTML table to R dataframe
+  magrittr::set_colnames(c("Date", "Price", "Open", "High", "Low", "Volume", "Change")) # Rename cols to better names
+```
+
+The dataset has seven attributes:
+
+* Date - Date
+* Price     - The cost of the crude oil at market closing
+* Open      - The cost of the crude oil at market opening
+* High      - Highest cost of the crude oil on that date
+* Low       - Lowest cost of the crude oil on that date
+* Volume - Number of shares of crude oil traded on that date
+* Change - percent change in closing cost from the day before to the current day.
+
+
+We have succesfully scraped the website, however the types of the attributes may not be correct. Lets see what types we have.
+
+```{r}
+str(oil) # Shows a "compact" summary of an R object.
+```
+
+Based on the results of calling str on our oil dataframe, we see that Date, Volume, and Change % are stored as characters. We need to fix the types of those attributes, and we can do so using [type_convert](https://www.rdocumentation.org/packages/readr/versions/1.3.1/topics/type_convert) from the readr package.
+
+```{r}
+
+oil$Volume <- gsub('K', 'e3', oil$Volume) # replace all numbers ending in K with e3
+oil$Volume <- gsub('M', 'e6', oil$Volume) # replace all numbers ending in M with e6
+oil[oil == "-"] <- NA # Set missing values to NA
+oil$Change <- as.numeric(sub("%", "",oil$Change,fixed=TRUE))/100 # Convert percentages to decimal
+
+oil <- oil %>%
+  type_convert(col_types = cols(Date = col_date(format = "%b %d, %Y"))) # Convert to correct types.
+
+str(oil)
+
+```
+
+Lets try plotting Crude Oil closing cost vs Year
+
+```{r}
+oil %>%
+  ggplot(aes(x=Date, y=Price)) +
+  geom_line() + 
+  labs(x = "Year", y="Closing Cost",
+       title = "Closing Cost of Crude Oil vs Year")
+```
+
+Based on this plot, the cost of crude oil generally increases in a linear fashion, but there have been some events which drastically changed the price of crude oil which explains the spikes.
+
+#### Loading Gold Data
+
+[Gold](https://www.britannica.com/science/gold-chemical-element) is a metallic yellow chemical element. Due to its color, brightness, and durability, gold has been percieved as valuable sinces the times of the earliest civilizations. As a result, gold still has meaning today and many people purchase gold today. We will be looking at the historical exchange rate between the US Dollar and an ounce of gold, provided by [Investing.com](https://www.investing.com/currencies/xau-usd-historical-data)
+
+```{r}
+gold <- read_csv("XAU_USD Historical Data.csv") %>% 
+  magrittr::set_colnames(c("Date", "Price", "Open", "High", "Low", "Change"))
+gold$Change <- as.numeric(sub("%", "",gold$Change,fixed=TRUE))/100 # Convert percentages to decimal
+
+gold <- gold %>%
+  type_convert(col_types = cols(Date = col_date(format = "%b %d, %Y"))) # Convert to correct types.
+
+str(gold)
+
+```
+
+
+The dataset has seven attributes:
+
+* Date - Date
+* Price     - The exchange rate of gold at market closing
+* Open      - The exchange rate of gold at market opening
+* High      - Highest exchange rate of gold on that date
+* Low       - Lowest exchange rate of gold on that date
+* Change - percent change in closing exchange rate of gold from the day before to the current day.
+
+## Merging the Data
+
+Now that we have data on the price of crude oil and the S&P 500 properly formatted, we can merge the dataframes together.
+In order to reduce confusion, we will rename attributes of the oil dataset to match their equivalents in the s&p 500 dataset.
+
+```{r}
+oil <- oil[c("Date", "Open", "High", "Low", "Price", "Volume", "Change")] %>%
+  magrittr::set_colnames(c("Date", "Open", "High", "Low", "Close", "Volume", "Change"))
+
+oil_snp <- inner_join((select(oil, "Date", "Close")), (select(snp, "Date", "Close")), by = "Date", suffix = c(".oil", ".s&p"))
+```
+
+We wil do the same for the Gold dataset.
+
+```{r}
+gold <- gold[c("Date", "Open", "High", "Low", "Price", "Change")] %>%
+  magrittr::set_colnames(c("Date", "Open", "High", "Low", "Close", "Change"))
+
+gold_snp <- inner_join((select(gold, "Date", "Close")), (select(snp, "Date", "Close")), by = "Date", suffix = c(".gold", ".s&p"))
+```
+
+Lets take a look at how oil and the S&P 500 change over the years.
+
+```{r}
+oil_snp %>%
+  ggplot(aes(x=Date)) +
+  geom_line(aes(y=`Close.s&p`)) +
+  geom_line(aes(y=`Close.oil`)) +
+  labs(x = "Year", y = "Value", title = "Crude Oil and S&P 500 vs Year")
+```
+
+Something's not quite right. The value of the S&P 500 is so much higher than the price of crude oil, that this plot doesn't really show us how their changes are correlated. If we want to compare their changes over time, we need to standardize them.
+
+```{r}
+oil_scaled <- oil %>%
+  mutate(CloseScaled = (Close - mean(Close))/sd(Close))
+snp_scaled <- snp %>%
+  mutate(CloseScaled = (Close - mean(Close))/sd(Close))
+
+oil_snp_scaled <- inner_join((select(oil_scaled, "Date", "CloseScaled")), select(snp_scaled, "Date", "CloseScaled"), by = "Date", suffix = c(".oil", ".s&p"))
+
+oil_snp_scaled %>%
+  ggplot(aes(x=Date)) +
+  geom_line(aes(y=`CloseScaled.s&p`), colour = "Blue") +
+  geom_line(aes(y=`CloseScaled.oil`), colour = "Red") +
+  labs(x = "Year", y = "Value", title = "Crude Oil (Red) and S&P 500 (Blue) vs Year")
+  
+```
+
+Now we are getting somewhere. It appears that the price of crude oil rises at a similar pace to that of the value of the S&P 500, however, certain years, the price of crude oil changes drastically. Since our end goal is to predict the value of the S&P 500, it makes sense to focus on the most recent years, as the price of crude oil has not had a major change in the last 4 years. 
+
+```{r}
+oil_scaled <- oil %>%
+  # We use the year function of the lubridate package (part of the tidyverse) to check for dates where year is at least 2016
+  filter(lubridate::year(Date) > 2016) %>% 
+  mutate(CloseScaled = (Close - mean(Close))/sd(Close))
+snp_scaled <- snp %>%
+  filter(lubridate::year(Date) > 2016) %>%
+  mutate(CloseScaled = (Close - mean(Close))/sd(Close))
+
+oil_snp_scaled <- inner_join(select(oil_scaled, "Date", "CloseScaled"), select(snp_scaled, "Date", "CloseScaled"), by = "Date", suffix = c(".oil", ".s&p"))
+
+oil_snp_scaled %>%
+  ggplot(aes(x=Date)) +
+  geom_line(aes(y=`CloseScaled.s&p`), colour = "Blue") +
+  geom_line(aes(y=`CloseScaled.oil`), colour = "Red") +
+  labs(x = "Year", y = "Value", title = "Crude Oil (Red) and S&P 500 (Blue) vs Year")
+  
+```
+
+This plot shows that there exists correlation between the price of Crude Oil and the Value of the S&P 500.
+
+Now lets take a look at Gold and S&P 500.
+
+```{r}
+gold_snp %>%
+  ggplot(aes(x = Date)) +
+  geom_line(aes(y = `Close.s&p`), colour = "Blue") +
+  geom_line(aes(y = `Close.gold`), colour = "Green") +
+  labs(x = "Year", y = "Value", title = "Gold (Green) and S&P 500 (Blue) vs Year")
+```
+
+Now lets scale Gold and look at all three together.
+
+```{r}
+gold_scaled <- gold %>%
+  # We use the year function of the lubridate package (part of the tidyverse) to check for dates where year is at least 2016
+  filter(lubridate::year(Date) > 2016) %>% 
+  mutate(CloseScaled = (Close - mean(Close))/sd(Close))
+
+
+gold_snp_oil_scaled <- inner_join(select(oil_scaled, "Date", "CloseScaled"), select(snp_scaled, "Date", "CloseScaled"), by = "Date", suffix = c(".oil", ".s&p")) %>%
+  inner_join(., select(gold_scaled, "Date", "CloseScaled"), by = "Date") %>%
+  magrittr::set_colnames(c("Date", "CloseScaled.oil", "CloseScaled.s&p", "CloseScaled.gold"))
+  
+
+gold_snp_oil_scaled %>%
+  ggplot(aes(x=Date)) +
+  geom_line(aes(y=`CloseScaled.s&p`), colour = "Blue") +
+  geom_line(aes(y=`CloseScaled.gold`), colour = "Green") +
+  geom_line(aes(y=`CloseScaled.oil`), colour = "Red") +
+  
+  labs(x = "Year", y = "Value", title = "Crude Oil (Red) Gold (Green) and S&P 500 (Blue) vs Year")
+```
+
+From this plot, we observe that in the last 4 years, The exchange rate of gold fluctuates far more rapidly than that of S&P 500 and crude oil. So we are just going to use crude oil as it is more consitent with changes in S&P 500.
+
+## Predicting S&P 500
+
+Based on previous analysis, assuming no major changes occur in the economy, we can predict the S&P 500 using multiple linear regression. Lets take a look at a scatter plot between  crude oil and S&P 500 from 2017 to present.
+
+```{r}
+library(plotly)
+
+oil_snp <- oil_snp %>%
+  filter(lubridate::year(Date) > 2016)
+
+oil_snp %>%
+  ggplot(aes(x = `Close.oil`, y = `Close.s&p`)) +
+  geom_point()
+        
+```
+
+The plot looks like it has moderate linear correlation. Lets perform an [ANOVA test](https://www.rdocumentation.org/packages/stats/versions/3.6.0/topics/aov) to check for interactions between crude oil closing price and Date. Our Null hypothesis is that there is no interaction between crude oil closing price and Date. Our alternative hypothesis is that there is an interaction. To show relevant information about the anova, we can use the [tidy](https://cran.r-project.org/web/packages/broom/vignettes/broom.html) function of the Broom package.
+
+```{r}
+anova <- aov(`Close.s&p` ~ `Close.oil` + Date + `Close.oil`*Date, data = oil_snp)
+broom::tidy(anova)
+```
+
+Based on the results of the anova test, we see that the p-value for the interaction Close.oil:Date is less than .001, so we reject the null hypothesis for all acceptable significance levels. We know know to include the interaction term in our model.
+
+Lets build the linear regression model with the  [lm](https://www.rdocumentation.org/packages/stats/versions/3.6.0/topics/lm) function. To show relevant information about the linear model, we again use broom::tidy
+
+```{r}
+model <- lm(`Close.s&p` ~ `Close.oil`*Date, data = oil_snp)
+broom::tidy(model)
+```
+
+Now that we have our linear model, we can predict the S&P 500 in the near future using the price of crude oil.
+
+```{r}
+snp %>%
+  filter(lubridate::year(Date) > 2016) %>%
+  ggplot(aes(x=Date, y=Close)) +
+  geom_line() +
+  geom_smooth(method = 'lm', colour = "red") + 
+  labs(x="Year", y="Closing Value", title = "S&P 500 Closing Value by Year")
+```
