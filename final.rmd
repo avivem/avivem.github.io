@@ -256,8 +256,6 @@ From this plot, we observe that in the last 4 years, The exchange rate of gold f
 Based on previous analysis, assuming no major changes occur in the economy, we can predict the S&P 500 using multiple linear regression. Lets take a look at a scatter plot between  crude oil and S&P 500 from 2017 to present.
 
 ```{r}
-library(plotly)
-
 oil_snp <- oil_snp %>%
   filter(lubridate::year(Date) > 2016)
 
